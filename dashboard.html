@@ -454,10 +454,31 @@
   };
   // ────────────────────────────────────────────────────────
 
-  let conversations = {};   // { phone: [ {dir, text, time} ] }
+  // ─── PERSISTENT STORAGE ─────────────────────────────────
+  // Load saved conversations + seenIds from localStorage so data
+  // survives page refreshes.
+  function loadStorage() {
+    try {
+      const c = localStorage.getItem('hinp_conversations');
+      const s = localStorage.getItem('hinp_seenIds');
+      return {
+        conversations: c ? JSON.parse(c) : {},
+        seenIds:       s ? new Set(JSON.parse(s)) : new Set()
+      };
+    } catch { return { conversations: {}, seenIds: new Set() }; }
+  }
+  function saveStorage() {
+    try {
+      localStorage.setItem('hinp_conversations', JSON.stringify(conversations));
+      localStorage.setItem('hinp_seenIds', JSON.stringify([...seenIds]));
+    } catch {}
+  }
+
+  const stored      = loadStorage();
+  let conversations = stored.conversations;
+  let seenIds       = stored.seenIds;
   let activePhone   = null;
   let refreshTimer  = null;
-  let seenIds       = new Set();   // track already-shown webhook requests
 
   const $ = id => document.getElementById(id);
 
@@ -504,11 +525,11 @@
     try {
       const target = `https://webhook.site/token/${CONFIG.webhookToken}/requests?per_page=100&page=1`;
 
-      // CORS proxies tried in order until one works
+      // CORS proxies tried in order until one succeeds
       const PROXIES = [
         u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
         u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-        u => `https://proxy.cors.sh/${u}`,
+        u => `https://thingproxy.freeboard.io/fetch/${u}`,
       ];
 
       let data = null;
@@ -516,21 +537,19 @@
       for (const makeProxy of PROXIES) {
         if (data) break;
         try {
-          const r = await fetch(makeProxy(target), {
-            headers: { Accept: 'application/json', 'x-requested-with': 'hinp-dashboard' }
-          });
-          if (r.ok) {
-            const text = await r.text();
-            const parsed = JSON.parse(text);
-            // allorigins/raw returns the JSON directly; corsproxy does too
-            if (parsed && (parsed.data !== undefined || parsed.total !== undefined)) {
-              data = parsed;
-            }
+          const r = await fetch(makeProxy(target), { headers: { Accept: 'application/json' } });
+          if (!r.ok) continue;
+          const raw = await r.text();
+          if (!raw || raw.trim() === '') continue;
+          const parsed = JSON.parse(raw);
+          // webhook.site returns { data:[...], total:N } — accept if it has data array
+          if (parsed && Array.isArray(parsed.data)) {
+            data = parsed;
           }
         } catch (_) { /* try next proxy */ }
       }
 
-      if (!data) throw new Error('جميع الوسطاء فشلوا');
+      if (!data) throw new Error('جميع الوسطاء فشلوا – حاول مرة أخرى');
 
       const items = data.data || [];
       let newCount = 0;
@@ -557,6 +576,7 @@
         });
       });
 
+      saveStorage();
       renderContactsList($('searchInput').value);
 
       if (newCount > 0) {
@@ -707,6 +727,7 @@
 
       if (resp.ok) {
         addMessage(activePhone, 'out', text, new Date().toISOString());
+        saveStorage();
         input.value = '';
         input.style.height = 'auto';
         renderMessages();
@@ -742,6 +763,7 @@
         console.log('[SEND via proxy] status:', r2.status, 'body:', t2);
         if (r2.ok) {
           addMessage(activePhone, 'out', text, new Date().toISOString());
+          saveStorage();
           input.value = '';
           input.style.height = 'auto';
           renderMessages();
@@ -787,6 +809,10 @@
   }
 
   // ─── INIT ────────────────────────────────────────────────
+  // Show saved conversations immediately before first fetch
+  if (Object.keys(conversations).length > 0) {
+    renderContactsList();
+  }
   fetchMessages();
   startAutoRefresh();
 
