@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HINP – لوحة تحكم واتساب</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet" />
+  <style>
+    /* ─── Reset ─── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --purple:      #4c22d4;
+      --purple-dark: #3a1abf;
+      --purple-pale: #ede8ff;
+      --green:       #25d366;
+      --green-dark:  #1da852;
+      --white:       #ffffff;
+      --bg:          #f0f2f5;
+      --sidebar-bg:  #111b21;
+      --panel-bg:    #ffffff;
+      --msg-in:      #ffffff;
+      --msg-out:     #d9fdd3;
+      --border:      #e9edef;
+      --text:        #111b21;
+      --text-muted:  #667781;
+      --radius:      12px;
+    }
+
+    body {
+      font-family: 'Cairo', sans-serif;
+      background: var(--bg);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ─── Top Bar ─── */
+    .topbar {
+      background: linear-gradient(135deg, var(--purple-dark), var(--purple));
+      color: #fff;
+      padding: 0 20px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(0,0,0,.25);
+      z-index: 10;
+    }
+    .topbar__brand { display: flex; align-items: center; gap: 10px; }
+    .topbar__logo { height: 34px; }
+    .topbar__title { font-size: 1rem; font-weight: 700; }
+    .topbar__num {
+      background: rgba(255,255,255,.18);
+      border: 1px solid rgba(255,255,255,.3);
+      padding: .3em 1em;
+      border-radius: 99px;
+      font-size: .82rem;
+      font-weight: 700;
+      letter-spacing: .04em;
+    }
+    .topbar__actions { display: flex; align-items: center; gap: 10px; }
+    .status-dot {
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      background: #4ade80;
+      display: inline-block;
+      box-shadow: 0 0 0 3px rgba(74,222,128,.3);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%,100% { box-shadow: 0 0 0 3px rgba(74,222,128,.3); }
+      50%      { box-shadow: 0 0 0 6px rgba(74,222,128,.1); }
+    }
+    .status-label { font-size: .8rem; color: rgba(255,255,255,.8); }
+    #refreshBtn {
+      background: rgba(255,255,255,.18);
+      border: 1px solid rgba(255,255,255,.3);
+      color: #fff;
+      padding: .35em .9em;
+      border-radius: 99px;
+      font-family: 'Cairo', sans-serif;
+      font-size: .82rem;
+      cursor: pointer;
+      transition: .2s;
+    }
+    #refreshBtn:hover { background: rgba(255,255,255,.28); }
+
+    /* ─── Main Layout ─── */
+    .app {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ─── Sidebar ─── */
+    .sidebar {
+      width: 340px;
+      background: var(--panel-bg);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+    .sidebar__header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .sidebar__title { font-size: .95rem; font-weight: 700; color: var(--text); }
+    .badge {
+      background: var(--green);
+      color: #fff;
+      font-size: .72rem;
+      font-weight: 700;
+      padding: .2em .6em;
+      border-radius: 99px;
+      min-width: 20px;
+      text-align: center;
+    }
+    .sidebar__search {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .sidebar__search input {
+      width: 100%;
+      background: var(--bg);
+      border: none;
+      border-radius: 8px;
+      padding: .5em 1em;
+      font-family: 'Cairo', sans-serif;
+      font-size: .88rem;
+      direction: rtl;
+      outline: none;
+      color: var(--text);
+    }
+    .contacts {
+      flex: 1;
+      overflow-y: auto;
+    }
+    .contact-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+      transition: background .15s;
+      position: relative;
+    }
+    .contact-item:hover { background: var(--bg); }
+    .contact-item.active { background: var(--purple-pale); }
+    .contact-item.unread .contact-name { font-weight: 800; }
+    .avatar {
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--purple), #9b7ef0);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 1.1rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .contact-info { flex: 1; min-width: 0; }
+    .contact-name {
+      font-size: .92rem;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .contact-preview {
+      font-size: .8rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 2px;
+    }
+    .contact-meta {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .contact-time { font-size: .72rem; color: var(--text-muted); }
+    .unread-dot {
+      width: 8px; height: 8px;
+      background: var(--green);
+      border-radius: 50%;
+    }
+    .empty-state {
+      padding: 40px 20px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: .9rem;
+    }
+    .empty-state .icon { font-size: 2.5rem; margin-bottom: 10px; }
+
+    /* ─── Chat Panel ─── */
+    .chat-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #efeae2;
+      background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0h60v60H0z' fill='none'/%3E%3C/svg%3E");
+      position: relative;
+      overflow: hidden;
+    }
+    .chat-welcome {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      gap: 16px;
+      padding: 40px;
+      text-align: center;
+    }
+    .chat-welcome .icon { font-size: 4rem; }
+    .chat-welcome h3 { font-size: 1.2rem; font-weight: 700; color: var(--text); }
+    .chat-welcome p { font-size: .9rem; }
+
+    .chat-header {
+      background: #f0f2f5;
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .chat-header .avatar { width: 38px; height: 38px; font-size: .95rem; }
+    .chat-header-info { flex: 1; }
+    .chat-header-name { font-size: .95rem; font-weight: 700; color: var(--text); }
+    .chat-header-status { font-size: .78rem; color: var(--green-dark); font-weight: 600; }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .msg-wrap {
+      display: flex;
+      flex-direction: column;
+    }
+    .msg-wrap.out { align-items: flex-start; }
+    .msg-wrap.in  { align-items: flex-end; }
+    .bubble {
+      max-width: 70%;
+      padding: 8px 12px;
+      border-radius: 12px;
+      font-size: .9rem;
+      line-height: 1.5;
+      position: relative;
+      word-break: break-word;
+    }
+    .msg-wrap.in  .bubble { background: var(--msg-in);  border-top-right-radius: 2px; box-shadow: 0 1px 2px rgba(0,0,0,.1); }
+    .msg-wrap.out .bubble { background: var(--msg-out); border-top-left-radius: 2px;  box-shadow: 0 1px 2px rgba(0,0,0,.1); }
+    .bubble-time {
+      font-size: .68rem;
+      color: var(--text-muted);
+      margin-top: 3px;
+      padding-inline: 4px;
+    }
+    .date-divider {
+      text-align: center;
+      font-size: .75rem;
+      color: var(--text-muted);
+      background: rgba(255,255,255,.7);
+      padding: .3em 1.2em;
+      border-radius: 99px;
+      align-self: center;
+      margin: 8px 0;
+      backdrop-filter: blur(4px);
+    }
+
+    /* Reply Box */
+    .reply-box {
+      background: #f0f2f5;
+      border-top: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .reply-box textarea {
+      flex: 1;
+      border: none;
+      border-radius: var(--radius);
+      padding: .65em 1em;
+      font-family: 'Cairo', sans-serif;
+      font-size: .92rem;
+      resize: none;
+      background: var(--white);
+      color: var(--text);
+      direction: rtl;
+      outline: none;
+      max-height: 120px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.08);
+    }
+    .reply-box textarea::placeholder { color: var(--text-muted); }
+    .send-btn {
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      background: var(--purple);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: .2s;
+      flex-shrink: 0;
+    }
+    .send-btn:hover  { background: var(--purple-dark); transform: scale(1.05); }
+    .send-btn:active { transform: scale(.96); }
+    .send-btn svg { width: 20px; height: 20px; fill: #fff; }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: #1f2937;
+      color: #fff;
+      padding: .6em 1.6em;
+      border-radius: 99px;
+      font-size: .88rem;
+      font-weight: 600;
+      z-index: 999;
+      transition: transform .3s ease;
+      pointer-events: none;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+
+    /* Spinner */
+    .spin {
+      width: 18px; height: 18px;
+      border: 2px solid rgba(255,255,255,.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Scrollbars */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 99px; }
+
+    /* Responsive */
+    @media (max-width: 700px) {
+      .sidebar { width: 100%; display: none; }
+      .sidebar.show { display: flex; }
+      .chat-panel { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="topbar__brand">
+    <img src="white logo.png" alt="HINP" class="topbar__logo" />
+    <span class="topbar__title">لوحة تحكم واتساب</span>
+  </div>
+  <div class="topbar__num">+966 56 341 7242</div>
+  <div class="topbar__actions">
+    <span class="status-dot"></span>
+    <span class="status-label">متصل</span>
+    <button id="refreshBtn">🔄 تحديث</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div class="app">
+
+  <!-- SIDEBAR: Contact List -->
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar__header">
+      <span class="sidebar__title">المحادثات</span>
+      <span class="badge" id="convCount">0</span>
+    </div>
+    <div class="sidebar__search">
+      <input type="text" id="searchInput" placeholder="🔍 ابحث عن رقم أو رسالة…" />
+    </div>
+    <div class="contacts" id="contactsList">
+      <div class="empty-state">
+        <div class="icon">💬</div>
+        <p>اضغط تحديث لجلب الرسائل</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHAT PANEL -->
+  <div class="chat-panel" id="chatPanel">
+    <div class="chat-welcome" id="chatWelcome">
+      <div class="icon">📲</div>
+      <h3>مرحباً بك في لوحة تحكم واتساب</h3>
+      <p>اختر محادثة من القائمة أو اضغط تحديث لجلب الرسائل الواردة</p>
+    </div>
+
+    <!-- Active chat (hidden until contact selected) -->
+    <div id="activeChatContainer" style="display:none; flex:1; flex-direction:column; overflow:hidden; display:none;">
+      <div class="chat-header" id="chatHeader">
+        <div class="avatar" id="chatAvatar">؟</div>
+        <div class="chat-header-info">
+          <div class="chat-header-name" id="chatName">—</div>
+          <div class="chat-header-status">نشط الآن</div>
+        </div>
+      </div>
+      <div class="messages" id="messagesContainer"></div>
+      <div class="reply-box">
+        <button class="send-btn" id="sendBtn" title="إرسال">
+          <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+        </button>
+        <textarea id="replyInput" rows="1" placeholder="اكتب ردك هنا…"></textarea>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+  // ─── CONFIG ─────────────────────────────────────────────
+  const CONFIG = {
+    apiKey:  'e76a06bd4fc41d9bd4b0da32412014c6-400d49f7-aca5-4ab5-8718-c1590e8ab366',
+    baseUrl: 'https://9jrq8y.api.infobip.com',
+    sender:  '96656341242',   // +966 56 341 7242 without +
+    autoRefreshSec: 15        // poll every 15 seconds
+  };
+  // ────────────────────────────────────────────────────────
+
+  let conversations = {};   // { phone: [ {dir, text, time} ] }
+  let activePhone   = null;
+  let refreshTimer  = null;
+
+  const $ = id => document.getElementById(id);
+
+  // ─── TOAST ──────────────────────────────────────────────
+  function showToast(msg, duration = 2500) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), duration);
+  }
+
+  // ─── FORMAT TIME ────────────────────────────────────────
+  function fmtTime(isoOrMs) {
+    const d = new Date(isoOrMs);
+    const now = new Date();
+    const isToday = d.toDateString() === now.toDateString();
+    return isToday
+      ? d.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
+      : d.toLocaleDateString('ar-SA', { day: 'numeric', month: 'short' }) +
+        ' ' + d.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function fmtDate(isoOrMs) {
+    const d = new Date(isoOrMs);
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) return 'اليوم';
+    const y = new Date(now); y.setDate(now.getDate() - 1);
+    if (d.toDateString() === y.toDateString()) return 'أمس';
+    return d.toLocaleDateString('ar-SA', { weekday: 'long', day: 'numeric', month: 'long' });
+  }
+
+  function initials(phone) {
+    return phone ? phone.slice(-2) : '؟';
+  }
+
+  // ─── FETCH MESSAGES ─────────────────────────────────────
+  async function fetchMessages() {
+    const btn = $('refreshBtn');
+    btn.innerHTML = '<span class="spin"></span>';
+    btn.disabled = true;
+
+    try {
+      const resp = await fetch(
+        `${CONFIG.baseUrl}/whatsapp/1/inbox/messages?limit=100`,
+        {
+          headers: {
+            'Authorization': `App ${CONFIG.apiKey}`,
+            'Content-Type':  'application/json',
+            'Accept':        'application/json'
+          }
+        }
+      );
+
+      if (!resp.ok) {
+        const err = await resp.text();
+        showToast(`❌ خطأ: ${resp.status} – ${err.slice(0,80)}`, 4000);
+        return;
+      }
+
+      const data = await resp.json();
+      processMessages(data);
+
+    } catch (e) {
+      // CORS fallback – try logs endpoint
+      try {
+        const resp2 = await fetch(
+          `${CONFIG.baseUrl}/whatsapp/1/logs?limit=50`,
+          {
+            headers: {
+              'Authorization': `App ${CONFIG.apiKey}`,
+              'Accept':        'application/json'
+            }
+          }
+        );
+        if (resp2.ok) {
+          const data2 = await resp2.json();
+          processLogs(data2);
+        } else {
+          showToast('❌ تعذّر الاتصال بـ Infobip API', 4000);
+        }
+      } catch (e2) {
+        showToast('❌ تعذّر الاتصال – تأكد من الاتصال بالإنترنت', 4000);
+      }
+    } finally {
+      btn.innerHTML = '🔄 تحديث';
+      btn.disabled  = false;
+    }
+  }
+
+  function processMessages(data) {
+    // Inbox messages response shape: { results: [...] }
+    const msgs = data.results || data.messages || [];
+    if (!msgs.length) { showToast('لا توجد رسائل جديدة'); return; }
+
+    msgs.forEach(m => {
+      const phone = m.from || m.sender || m.contact?.msisdn || 'مجهول';
+      const text  = m.message?.text || m.content?.text || m.body?.text || JSON.stringify(m.message || m.content || '');
+      const time  = m.receivedAt || m.createdAt || m.sentAt || new Date().toISOString();
+      addMessage(phone, 'in', text, time);
+    });
+
+    renderContactsList();
+    showToast(`✅ تم جلب ${msgs.length} رسالة`);
+  }
+
+  function processLogs(data) {
+    const msgs = data.results || [];
+    if (!msgs.length) { showToast('لا توجد رسائل'); return; }
+
+    msgs.forEach(m => {
+      const phone = m.to || m.destination || 'مجهول';
+      const text  = m.message?.text || m.content?.text || '—';
+      const time  = m.sentAt || new Date().toISOString();
+      addMessage(phone, 'out', text, time);
+    });
+
+    renderContactsList();
+    showToast(`✅ تم جلب ${msgs.length} رسالة من السجل`);
+  }
+
+  function addMessage(phone, dir, text, time) {
+    if (!conversations[phone]) conversations[phone] = [];
+    // Avoid duplicates
+    const exists = conversations[phone].some(m => m.text === text && m.time === time);
+    if (!exists) conversations[phone].push({ dir, text, time });
+    // Sort by time
+    conversations[phone].sort((a, b) => new Date(a.time) - new Date(b.time));
+  }
+
+  // ─── RENDER CONTACTS LIST ───────────────────────────────
+  function renderContactsList(filter = '') {
+    const list = $('contactsList');
+    const phones = Object.keys(conversations);
+    $('convCount').textContent = phones.length;
+
+    if (!phones.length) {
+      list.innerHTML = `<div class="empty-state"><div class="icon">💬</div><p>لا توجد محادثات</p></div>`;
+      return;
+    }
+
+    const filtered = phones.filter(p => {
+      if (!filter) return true;
+      const msgs = conversations[p];
+      return p.includes(filter) || msgs.some(m => m.text.includes(filter));
+    });
+
+    list.innerHTML = filtered.map(phone => {
+      const msgs = conversations[phone];
+      const last = msgs[msgs.length - 1];
+      const isActive = phone === activePhone;
+      return `
+        <div class="contact-item ${isActive ? 'active' : 'unread'}" onclick="openChat('${phone}')">
+          <div class="avatar">${initials(phone)}</div>
+          <div class="contact-info">
+            <div class="contact-name">${phone}</div>
+            <div class="contact-preview">${last.dir === 'out' ? '✔ أنت: ' : ''}${last.text}</div>
+          </div>
+          <div class="contact-meta">
+            <span class="contact-time">${fmtTime(last.time)}</span>
+            ${!isActive ? '<span class="unread-dot"></span>' : ''}
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  // ─── OPEN CHAT ──────────────────────────────────────────
+  function openChat(phone) {
+    activePhone = phone;
+    $('chatWelcome').style.display = 'none';
+    const cc = $('activeChatContainer');
+    cc.style.display  = 'flex';
+    cc.style.flexDirection = 'column';
+    cc.style.overflow = 'hidden';
+    cc.style.flex     = '1';
+
+    $('chatAvatar').textContent = initials(phone);
+    $('chatName').textContent   = phone;
+
+    renderMessages();
+    renderContactsList($('searchInput').value);
+  }
+
+  // ─── RENDER MESSAGES ────────────────────────────────────
+  function renderMessages() {
+    const container = $('messagesContainer');
+    const msgs = conversations[activePhone] || [];
+    let lastDate = null;
+    let html = '';
+
+    msgs.forEach(m => {
+      const d = new Date(m.time).toDateString();
+      if (d !== lastDate) {
+        html += `<div class="date-divider">${fmtDate(m.time)}</div>`;
+        lastDate = d;
+      }
+      const dir = m.dir === 'in' ? 'in' : 'out';
+      html += `
+        <div class="msg-wrap ${dir}">
+          <div class="bubble">${escHtml(m.text)}</div>
+          <span class="bubble-time">${fmtTime(m.time)}</span>
+        </div>`;
+    });
+
+    container.innerHTML = html;
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+      .replace(/\n/g,'<br>');
+  }
+
+  // ─── SEND MESSAGE ────────────────────────────────────────
+  async function sendMessage() {
+    const input = $('replyInput');
+    const text  = input.value.trim();
+    if (!text || !activePhone) return;
+
+    const btn = $('sendBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin" style="border-color:rgba(255,255,255,.4);border-top-color:#fff"></span>';
+
+    try {
+      const resp = await fetch(
+        `${CONFIG.baseUrl}/whatsapp/1/message/text`,
+        {
+          method:  'POST',
+          headers: {
+            'Authorization': `App ${CONFIG.apiKey}`,
+            'Content-Type':  'application/json'
+          },
+          body: JSON.stringify({
+            from:    CONFIG.sender,
+            to:      activePhone,
+            content: { text }
+          })
+        }
+      );
+
+      if (resp.ok) {
+        addMessage(activePhone, 'out', text, new Date().toISOString());
+        input.value = '';
+        input.style.height = 'auto';
+        renderMessages();
+        renderContactsList($('searchInput').value);
+        showToast('✅ تم الإرسال');
+      } else {
+        const err = await resp.text();
+        showToast(`❌ فشل الإرسال: ${err.slice(0,80)}`, 4000);
+      }
+    } catch (e) {
+      showToast('❌ خطأ في الإرسال – تحقق من الاتصال', 4000);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="white"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>';
+    }
+  }
+
+  // ─── EVENT LISTENERS ────────────────────────────────────
+  $('refreshBtn').addEventListener('click', fetchMessages);
+
+  $('sendBtn').addEventListener('click', sendMessage);
+
+  $('replyInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  $('replyInput').addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+  });
+
+  $('searchInput').addEventListener('input', function() {
+    renderContactsList(this.value);
+  });
+
+  // ─── AUTO REFRESH ────────────────────────────────────────
+  function startAutoRefresh() {
+    if (refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = setInterval(fetchMessages, CONFIG.autoRefreshSec * 1000);
+  }
+
+  // ─── INIT ────────────────────────────────────────────────
+  fetchMessages();
+  startAutoRefresh();
+
+  // Update timer countdown in status
+  let countdown = CONFIG.autoRefreshSec;
+  setInterval(() => {
+    countdown--;
+    if (countdown <= 0) countdown = CONFIG.autoRefreshSec;
+    const label = document.querySelector('.status-label');
+    if (label) label.textContent = `تحديث خلال ${countdown}ث`;
+  }, 1000);
+</script>
+</body>
+</html>
