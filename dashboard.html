@@ -442,16 +442,22 @@
 <script>
   // ─── CONFIG ─────────────────────────────────────────────
   const CONFIG = {
-    apiKey:  'e76a06bd4fc41d9bd4b0da32412014c6-400d49f7-aca5-4ab5-8718-c1590e8ab366',
-    baseUrl: 'https://9jrq8y.api.infobip.com',
-    sender:  '96656341242',   // +966 56 341 7242 without +
-    autoRefreshSec: 15        // poll every 15 seconds
+    // Infobip (for SENDING replies)
+    apiKey:       'e76a06bd4fc41d9bd4b0da32412014c6-400d49f7-aca5-4ab5-8718-c1590e8ab366',
+    baseUrl:      'https://9jrq8y.api.infobip.com',
+    sender:       '96656341242',       // +966 56 341 7242 without +
+
+    // Webhook.site (for READING incoming messages)
+    webhookToken: '0884ed90-1d01-402b-b055-ad286df1bec4',
+
+    autoRefreshSec: 12
   };
   // ────────────────────────────────────────────────────────
 
   let conversations = {};   // { phone: [ {dir, text, time} ] }
   let activePhone   = null;
   let refreshTimer  = null;
+  let seenIds       = new Set();   // track already-shown webhook requests
 
   const $ = id => document.getElementById(id);
 
@@ -487,89 +493,68 @@
     return phone ? phone.slice(-2) : '؟';
   }
 
-  // ─── FETCH MESSAGES ─────────────────────────────────────
+  // ─── FETCH INCOMING MESSAGES from webhook.site ──────────
   async function fetchMessages() {
     const btn = $('refreshBtn');
     btn.innerHTML = '<span class="spin"></span>';
-    btn.disabled = true;
+    btn.disabled  = true;
 
     try {
-      const resp = await fetch(
-        `${CONFIG.baseUrl}/whatsapp/1/inbox/messages?limit=100`,
-        {
-          headers: {
-            'Authorization': `App ${CONFIG.apiKey}`,
-            'Content-Type':  'application/json',
-            'Accept':        'application/json'
-          }
-        }
-      );
+      // Webhook.site stores all requests sent to your URL.
+      // Each request's `content` field is the JSON body Infobip posted.
+      const url = `https://webhook.site/token/${CONFIG.webhookToken}/requests?per_page=100&page=1`;
+      const resp = await fetch(url, {
+        headers: { 'Accept': 'application/json' }
+      });
 
       if (!resp.ok) {
-        const err = await resp.text();
-        showToast(`❌ خطأ: ${resp.status} – ${err.slice(0,80)}`, 4000);
+        showToast(`❌ خطأ webhook.site: ${resp.status}`, 4000);
         return;
       }
 
-      const data = await resp.json();
-      processMessages(data);
+      const data  = await resp.json();
+      const items = data.data || [];
+
+      let newCount = 0;
+
+      items.forEach(item => {
+        if (seenIds.has(item.uuid)) return;   // skip already processed
+        seenIds.add(item.uuid);
+
+        // item.content is the raw POST body from Infobip
+        let payload;
+        try { payload = JSON.parse(item.content); } catch { return; }
+
+        // Infobip WhatsApp inbound payload shape:
+        // { results: [{ from, receivedAt, message: { type, text }, contact: { name } }] }
+        const results = payload.results || [];
+        results.forEach(m => {
+          const phone = m.from || 'مجهول';
+          const text  = m.message?.text
+                     || m.message?.caption
+                     || `[${m.message?.type || 'media'}]`;
+          const time  = m.receivedAt || item.created_at || new Date().toISOString();
+          addMessage(phone, 'in', text, time);
+          newCount++;
+        });
+      });
+
+      renderContactsList($('searchInput').value);
+
+      if (newCount > 0) {
+        showToast(`📩 ${newCount} رسالة جديدة`);
+        if (activePhone) renderMessages();
+      } else {
+        showToast('لا توجد رسائل جديدة');
+      }
 
     } catch (e) {
-      // CORS fallback – try logs endpoint
-      try {
-        const resp2 = await fetch(
-          `${CONFIG.baseUrl}/whatsapp/1/logs?limit=50`,
-          {
-            headers: {
-              'Authorization': `App ${CONFIG.apiKey}`,
-              'Accept':        'application/json'
-            }
-          }
-        );
-        if (resp2.ok) {
-          const data2 = await resp2.json();
-          processLogs(data2);
-        } else {
-          showToast('❌ تعذّر الاتصال بـ Infobip API', 4000);
-        }
-      } catch (e2) {
-        showToast('❌ تعذّر الاتصال – تأكد من الاتصال بالإنترنت', 4000);
-      }
+      showToast('❌ تعذّر الاتصال بـ webhook.site', 4000);
+      console.error(e);
     } finally {
       btn.innerHTML = '🔄 تحديث';
       btn.disabled  = false;
     }
-  }
-
-  function processMessages(data) {
-    // Inbox messages response shape: { results: [...] }
-    const msgs = data.results || data.messages || [];
-    if (!msgs.length) { showToast('لا توجد رسائل جديدة'); return; }
-
-    msgs.forEach(m => {
-      const phone = m.from || m.sender || m.contact?.msisdn || 'مجهول';
-      const text  = m.message?.text || m.content?.text || m.body?.text || JSON.stringify(m.message || m.content || '');
-      const time  = m.receivedAt || m.createdAt || m.sentAt || new Date().toISOString();
-      addMessage(phone, 'in', text, time);
-    });
-
-    renderContactsList();
-    showToast(`✅ تم جلب ${msgs.length} رسالة`);
-  }
-
-  function processLogs(data) {
-    const msgs = data.results || [];
-    if (!msgs.length) { showToast('لا توجد رسائل'); return; }
-
-    msgs.forEach(m => {
-      const phone = m.to || m.destination || 'مجهول';
-      const text  = m.message?.text || m.content?.text || '—';
-      const time  = m.sentAt || new Date().toISOString();
-      addMessage(phone, 'out', text, time);
-    });
-
-    renderContactsList();
-    showToast(`✅ تم جلب ${msgs.length} رسالة من السجل`);
   }
 
   function addMessage(phone, dir, text, time) {
