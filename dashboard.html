@@ -494,45 +494,51 @@
   }
 
   // ─── FETCH INCOMING MESSAGES from webhook.site ──────────
+  // Direct browser → webhook.site is blocked by CORS.
+  // We use allorigins.win as a free CORS proxy (no rate limit for small traffic).
   async function fetchMessages() {
     const btn = $('refreshBtn');
     btn.innerHTML = '<span class="spin"></span>';
     btn.disabled  = true;
 
     try {
-      // Webhook.site stores all requests sent to your URL.
-      // Each request's `content` field is the JSON body Infobip posted.
-      const url = `https://webhook.site/token/${CONFIG.webhookToken}/requests?per_page=100&page=1`;
-      const resp = await fetch(url, {
-        headers: { 'Accept': 'application/json' }
-      });
+      const target = `https://webhook.site/token/${CONFIG.webhookToken}/requests?per_page=100&page=1`;
 
-      if (!resp.ok) {
-        showToast(`❌ خطأ webhook.site: ${resp.status}`, 4000);
-        return;
+      // ── Try 1: direct (works if site allows CORS, e.g. same origin or extension)
+      let data = null;
+      try {
+        const r = await fetch(target, { headers: { Accept: 'application/json' } });
+        if (r.ok) data = await r.json();
+      } catch (_) { /* CORS blocked – fall through to proxy */ }
+
+      // ── Try 2: allorigins proxy
+      if (!data) {
+        const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(target)}`;
+        const r2 = await fetch(proxy);
+        if (!r2.ok) throw new Error(`proxy ${r2.status}`);
+        const wrapper = await r2.json();
+        data = JSON.parse(wrapper.contents);
       }
 
-      const data  = await resp.json();
       const items = data.data || [];
-
       let newCount = 0;
 
       items.forEach(item => {
-        if (seenIds.has(item.uuid)) return;   // skip already processed
+        if (seenIds.has(item.uuid)) return;
         seenIds.add(item.uuid);
 
-        // item.content is the raw POST body from Infobip
+        // item.content = raw JSON body posted by Infobip
         let payload;
         try { payload = JSON.parse(item.content); } catch { return; }
 
-        // Infobip WhatsApp inbound payload shape:
-        // { results: [{ from, receivedAt, message: { type, text }, contact: { name } }] }
-        const results = payload.results || [];
+        // Infobip WhatsApp inbound shape:
+        // { results: [{ from, receivedAt, message:{type,text}, contact:{name} }] }
+        const results = payload.results || (Array.isArray(payload) ? payload : []);
         results.forEach(m => {
-          const phone = m.from || 'مجهول';
+          const phone = m.from || m.sender || 'مجهول';
           const text  = m.message?.text
                      || m.message?.caption
-                     || `[${m.message?.type || 'media'}]`;
+                     || (m.message?.type ? `[${m.message.type}]` : '—');
           const time  = m.receivedAt || item.created_at || new Date().toISOString();
           addMessage(phone, 'in', text, time);
           newCount++;
@@ -545,12 +551,12 @@
         showToast(`📩 ${newCount} رسالة جديدة`);
         if (activePhone) renderMessages();
       } else {
-        showToast('لا توجد رسائل جديدة');
+        showToast('✅ لا توجد رسائل جديدة');
       }
 
     } catch (e) {
-      showToast('❌ تعذّر الاتصال بـ webhook.site', 4000);
-      console.error(e);
+      showToast('❌ خطأ في جلب الرسائل – ' + e.message, 4000);
+      console.error('fetchMessages error:', e);
     } finally {
       btn.innerHTML = '🔄 تحديث';
       btn.disabled  = false;
