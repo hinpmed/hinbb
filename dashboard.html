@@ -447,8 +447,8 @@
     baseUrl:      'https://9jrq8y.api.infobip.com',
     sender:       '966563417242',      // +966 56 341 7242 without +
 
-    // Webhook.site (for READING incoming messages)
-    webhookToken: '0884ed90-1d01-402b-b055-ad286df1bec4',
+    // Local PHP backend (same domain = no CORS issues)
+    backendUrl: '/webhook.php',
 
     autoRefreshSec: 12
   };
@@ -514,66 +514,35 @@
     return phone ? phone.slice(-2) : '؟';
   }
 
-  // ─── FETCH INCOMING MESSAGES from webhook.site ──────────
-  // Direct browser → webhook.site is blocked by CORS.
-  // We use allorigins.win as a free CORS proxy (no rate limit for small traffic).
+  // ─── FETCH INCOMING MESSAGES from local PHP backend ──────
+  // webhook.php is on the same domain (hinp.sa) → zero CORS issues
   async function fetchMessages() {
     const btn = $('refreshBtn');
     btn.innerHTML = '<span class="spin"></span>';
     btn.disabled  = true;
 
     try {
-      const target = `https://webhook.site/token/${CONFIG.webhookToken}/requests?per_page=100&page=1`;
+      const resp = await fetch(CONFIG.backendUrl, {
+        headers: { Accept: 'application/json' }
+      });
 
-      // CORS proxies tried in order until one succeeds
-      const PROXIES = [
-        u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-        u => `https://thingproxy.freeboard.io/fetch/${u}`,
-      ];
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
-      let data = null;
+      const data = await resp.json();
+      // backend returns { messages: [...], total: N }
+      const msgs = data.messages || [];
 
-      for (const makeProxy of PROXIES) {
-        if (data) break;
-        try {
-          const r = await fetch(makeProxy(target), { headers: { Accept: 'application/json' } });
-          if (!r.ok) continue;
-          const raw = await r.text();
-          if (!raw || raw.trim() === '') continue;
-          const parsed = JSON.parse(raw);
-          // webhook.site returns { data:[...], total:N } — accept if it has data array
-          if (parsed && Array.isArray(parsed.data)) {
-            data = parsed;
-          }
-        } catch (_) { /* try next proxy */ }
-      }
-
-      if (!data) throw new Error('جميع الوسطاء فشلوا – حاول مرة أخرى');
-
-      const items = data.data || [];
       let newCount = 0;
 
-      items.forEach(item => {
-        if (seenIds.has(item.uuid)) return;
-        seenIds.add(item.uuid);
+      msgs.forEach(m => {
+        if (seenIds.has(m.id)) return;
+        seenIds.add(m.id);
 
-        // item.content = raw JSON body posted by Infobip
-        let payload;
-        try { payload = JSON.parse(item.content); } catch { return; }
-
-        // Infobip WhatsApp inbound shape:
-        // { results: [{ from, receivedAt, message:{type,text}, contact:{name} }] }
-        const results = payload.results || (Array.isArray(payload) ? payload : []);
-        results.forEach(m => {
-          const phone = m.from || m.sender || 'مجهول';
-          const text  = m.message?.text
-                     || m.message?.caption
-                     || (m.message?.type ? `[${m.message.type}]` : '—');
-          const time  = m.receivedAt || item.created_at || new Date().toISOString();
-          addMessage(phone, 'in', text, time);
-          newCount++;
-        });
+        const phone = m.from || 'مجهول';
+        const text  = m.text || '—';
+        const time  = m.time || new Date().toISOString();
+        addMessage(phone, 'in', text, time);
+        newCount++;
       });
 
       saveStorage();
@@ -587,7 +556,7 @@
       }
 
     } catch (e) {
-      showToast('❌ خطأ في جلب الرسائل – ' + e.message, 4000);
+      showToast('❌ خطأ في جلب الرسائل: ' + e.message, 4000);
       console.error('fetchMessages error:', e);
     } finally {
       btn.innerHTML = '🔄 تحديث';
