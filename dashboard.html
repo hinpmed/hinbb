@@ -504,21 +504,33 @@
     try {
       const target = `https://webhook.site/token/${CONFIG.webhookToken}/requests?per_page=100&page=1`;
 
-      // ── Try 1: direct (works if site allows CORS, e.g. same origin or extension)
-      let data = null;
-      try {
-        const r = await fetch(target, { headers: { Accept: 'application/json' } });
-        if (r.ok) data = await r.json();
-      } catch (_) { /* CORS blocked – fall through to proxy */ }
+      // CORS proxies tried in order until one works
+      const PROXIES = [
+        u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+        u => `https://proxy.cors.sh/${u}`,
+      ];
 
-      // ── Try 2: allorigins proxy
-      if (!data) {
-        const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(target)}`;
-        const r2 = await fetch(proxy);
-        if (!r2.ok) throw new Error(`proxy ${r2.status}`);
-        const wrapper = await r2.json();
-        data = JSON.parse(wrapper.contents);
+      let data = null;
+
+      for (const makeProxy of PROXIES) {
+        if (data) break;
+        try {
+          const r = await fetch(makeProxy(target), {
+            headers: { Accept: 'application/json', 'x-requested-with': 'hinp-dashboard' }
+          });
+          if (r.ok) {
+            const text = await r.text();
+            const parsed = JSON.parse(text);
+            // allorigins/raw returns the JSON directly; corsproxy does too
+            if (parsed && (parsed.data !== undefined || parsed.total !== undefined)) {
+              data = parsed;
+            }
+          }
+        } catch (_) { /* try next proxy */ }
       }
+
+      if (!data) throw new Error('جميع الوسطاء فشلوا');
 
       const items = data.data || [];
       let newCount = 0;
