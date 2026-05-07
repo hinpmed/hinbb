@@ -445,7 +445,7 @@
     // Infobip (for SENDING replies)
     apiKey:       'e76a06bd4fc41d9bd4b0da32412014c6-400d49f7-aca5-4ab5-8718-c1590e8ab366',
     baseUrl:      'https://9jrq8y.api.infobip.com',
-    sender:       '96656341242',       // +966 56 341 7242 without +
+    sender:       '966563417242',      // +966 56 341 7242 without +
 
     // Webhook.site (for READING incoming messages)
     webhookToken: '0884ed90-1d01-402b-b055-ad286df1bec4',
@@ -679,22 +679,31 @@
     btn.disabled = true;
     btn.innerHTML = '<span class="spin" style="border-color:rgba(255,255,255,.4);border-top-color:#fff"></span>';
 
+    // Normalize recipient number: strip +, spaces, dashes
+    const toNumber = activePhone.replace(/[\s\+\-]/g, '');
+
+    const payload = JSON.stringify({
+      from:    CONFIG.sender,
+      to:      toNumber,
+      content: { text }
+    });
+
+    console.log('[SEND] from:', CONFIG.sender, '→ to:', toNumber);
+
     try {
-      const resp = await fetch(
-        `${CONFIG.baseUrl}/whatsapp/1/message/text`,
-        {
-          method:  'POST',
-          headers: {
-            'Authorization': `App ${CONFIG.apiKey}`,
-            'Content-Type':  'application/json'
-          },
-          body: JSON.stringify({
-            from:    CONFIG.sender,
-            to:      activePhone,
-            content: { text }
-          })
-        }
-      );
+      // Direct call to Infobip (they support CORS for API calls)
+      const resp = await fetch(`${CONFIG.baseUrl}/whatsapp/1/message/text`, {
+        method:  'POST',
+        headers: {
+          'Authorization': `App ${CONFIG.apiKey}`,
+          'Content-Type':  'application/json',
+          'Accept':        'application/json'
+        },
+        body: payload
+      });
+
+      const respText = await resp.text();
+      console.log('[SEND] status:', resp.status, 'body:', respText);
 
       if (resp.ok) {
         addMessage(activePhone, 'out', text, new Date().toISOString());
@@ -702,13 +711,48 @@
         input.style.height = 'auto';
         renderMessages();
         renderContactsList($('searchInput').value);
-        showToast('✅ تم الإرسال');
+        showToast('✅ تم الإرسال بنجاح');
       } else {
-        const err = await resp.text();
-        showToast(`❌ فشل الإرسال: ${err.slice(0,80)}`, 4000);
+        // Parse Infobip error for a useful message
+        let errMsg = respText;
+        try {
+          const errJson = JSON.parse(respText);
+          errMsg = errJson.requestError?.serviceException?.text
+                || errJson.error
+                || errJson.message
+                || respText;
+        } catch(_) {}
+        showToast(`❌ ${resp.status}: ${errMsg.slice(0, 120)}`, 6000);
       }
+
     } catch (e) {
-      showToast('❌ خطأ في الإرسال – تحقق من الاتصال', 4000);
+      // CORS fallback: route send through corsproxy.io
+      console.warn('[SEND] direct failed, trying proxy:', e.message);
+      try {
+        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(`${CONFIG.baseUrl}/whatsapp/1/message/text`)}`;
+        const r2 = await fetch(proxyUrl, {
+          method:  'POST',
+          headers: {
+            'Authorization': `App ${CONFIG.apiKey}`,
+            'Content-Type':  'application/json'
+          },
+          body: payload
+        });
+        const t2 = await r2.text();
+        console.log('[SEND via proxy] status:', r2.status, 'body:', t2);
+        if (r2.ok) {
+          addMessage(activePhone, 'out', text, new Date().toISOString());
+          input.value = '';
+          input.style.height = 'auto';
+          renderMessages();
+          renderContactsList($('searchInput').value);
+          showToast('✅ تم الإرسال بنجاح');
+        } else {
+          showToast(`❌ فشل الإرسال (${r2.status}): ${t2.slice(0,100)}`, 6000);
+        }
+      } catch (e2) {
+        showToast('❌ تعذّر الإرسال – ' + e2.message, 5000);
+      }
     } finally {
       btn.disabled = false;
       btn.innerHTML = '<svg viewBox="0 0 24 24" fill="white"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>';
